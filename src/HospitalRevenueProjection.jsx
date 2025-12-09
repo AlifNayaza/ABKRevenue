@@ -2,8 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { 
   TrendingUp, Bed, Wallet, Activity, 
   ChevronDown, ChevronUp, PieChart, LayoutGrid, 
-  Table2, Download, ArrowLeft, ArrowUpRight,
-  FileSpreadsheet, FileText
+  Table2, ArrowLeft, ArrowUpRight,
+  FileSpreadsheet, FileText, Calendar, Minus, Plus
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -17,32 +17,35 @@ const Card = ({ children, className = "" }) => (
   </div>
 );
 
-const StatCard = ({ title, value, subtext, trend, active, onClick }) => (
+// StatCard Diperbarui untuk Menampilkan % Kenaikan/Penurunan
+const StatCard = ({ title, value, subtext, trendLabel, trendValue, isPositive, onClick }) => (
   <div 
     onClick={onClick}
-    className={`p-5 rounded-2xl border transition-all duration-300 cursor-pointer group ${
-    active 
-    ? 'bg-slate-900 text-white border-slate-900 shadow-lg transform scale-[1.02]' 
-    : 'bg-white text-slate-600 border-slate-100 hover:border-slate-300 hover:shadow-md'
-  }`}>
-    <div className="flex justify-between items-start">
-      <p className={`text-[10px] font-bold tracking-widest uppercase mb-1 ${active ? 'text-slate-400' : 'text-slate-400'}`}>
+    className="p-5 rounded-2xl border bg-white border-slate-100 hover:border-slate-300 hover:shadow-md transition-all duration-300 cursor-pointer group"
+  >
+    <div className="flex justify-between items-start mb-2">
+      <p className="text-[10px] font-bold tracking-widest uppercase text-slate-400">
         {title}
       </p>
-      {trend && (
-        <span className="flex items-center gap-1 text-[10px] font-medium text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full">
-          <TrendingUp size={10} /> {trend}
-        </span>
-      )}
+      {/* BADGE PERSENTASE KENAIKAN/PENURUNAN */}
+      <span className={`flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full border ${
+        isPositive 
+          ? 'text-emerald-600 bg-emerald-50 border-emerald-100' 
+          : 'text-rose-600 bg-rose-50 border-rose-100'
+      }`}>
+        <TrendingUp size={10} className={!isPositive ? 'rotate-180' : ''} /> 
+        {trendLabel} {trendValue}
+      </span>
     </div>
-    <h3 className={`text-2xl font-display font-bold mb-1 ${active ? 'text-white' : 'text-slate-900'}`}>
+    
+    <h3 className="text-2xl font-display font-bold text-slate-900 mb-1">
       {value}
     </h3>
-    <span className="text-xs opacity-80">{subtext}</span>
+    <span className="text-xs text-slate-500 font-medium">{subtext}</span>
   </div>
 );
 
-const InputField = ({ label, field, suffix, value, onChange, step = 1 }) => (
+const InputField = ({ label, field, suffix, value, onChange, step = 1, min = 0 }) => (
   <div className="group">
     <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 transition-colors group-focus-within:text-blue-600">
       {label}
@@ -53,6 +56,7 @@ const InputField = ({ label, field, suffix, value, onChange, step = 1 }) => (
         value={value} 
         onChange={(e) => onChange(field, e.target.value)}
         step={step}
+        min={min}
         className="w-full pl-0 pr-8 py-2 bg-transparent border-b-2 border-slate-200 text-slate-800 font-medium text-sm focus:border-blue-600 focus:outline-none transition-colors placeholder-slate-300"
         placeholder="0"
       />
@@ -66,9 +70,14 @@ const InputField = ({ label, field, suffix, value, onChange, step = 1 }) => (
 const ABKAnalytics = () => {
   // --- STATE ---
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [expandedSection, setExpandedSection] = useState('beds');
+  const [expandedSection, setExpandedSection] = useState('mix'); 
 
   const [inputs, setInputs] = useState({
+    // Waktu
+    baseYear: new Date().getFullYear(),
+    tahunProyeksi: 3, 
+    growthRate: 8,
+
     // Kapasitas
     ttVIP: 10, ttKelas1: 20, ttKelas2: 30, ttKelas3: 40,
     // Target BOR
@@ -79,14 +88,17 @@ const ABKAnalytics = () => {
     tarifVIP: 1500000, tarifKelas1: 800000, tarifKelas2: 500000, tarifKelas3: 300000,
     // BPJS
     pctBPJS: 65, tarifBPJS: 5000000,
-    // Penunjang & Pertumbuhan
-    pctLab: 15, pctRadiologi: 10, pctFarmasi: 25, pctTindakan: 20,
-    growthRate: 8, tahunProyeksi: 3
+    // Penunjang
+    pctLab: 15, pctRadiologi: 10, pctFarmasi: 25, pctTindakan: 20
   });
 
-  // --- LOGIC PERHITUNGAN (DIKEMBALIKAN KE VERSI LENGKAP) ---
+  // --- LOGIC PERHITUNGAN ---
   const handleInputChange = (field, value) => {
     setInputs(prev => ({ ...prev, [field]: parseFloat(value) || 0 }));
+  };
+
+  const adjustYear = (delta) => {
+    setInputs(prev => ({ ...prev, baseYear: prev.baseYear + delta }));
   };
 
   const formatRupiah = (num) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(num);
@@ -94,8 +106,11 @@ const ABKAnalytics = () => {
 
   const calculations = useMemo(() => {
     const results = [];
+    let previousTotalRevenue = 0; 
+
     for (let year = 0; year <= inputs.tahunProyeksi; year++) {
       const growthFactor = Math.pow(1 + inputs.growthRate / 100, year);
+      const currentYear = inputs.baseYear + year;
       
       const classes = [
         { name: 'VIP', tt: inputs.ttVIP, bor: inputs.borVIP, alos: inputs.alosVIP, tarif: inputs.tarifVIP },
@@ -111,13 +126,12 @@ const ABKAnalytics = () => {
       
       classes.forEach(cls => {
         const hariRawat = cls.tt * (cls.bor / 100) * 365;
-        const jumlahPasien = hariRawat / cls.alos; // Hari rawat / ALOS
+        const jumlahPasien = hariRawat / cls.alos;
         const pasienBPJS = jumlahPasien * (inputs.pctBPJS / 100);
         const pasienUmum = jumlahPasien * (1 - inputs.pctBPJS / 100);
         
-        // Logika Split Pendapatan
         const pendapatanBPJS = pasienBPJS * inputs.tarifBPJS;
-        const pendapatanUmum = pasienUmum * cls.alos * cls.tarif; // Umum bayar per hari
+        const pendapatanUmum = pasienUmum * cls.alos * cls.tarif;
         const pendapatanKelas = (pendapatanBPJS + pendapatanUmum) * growthFactor;
         
         totalRawatInap += pendapatanKelas;
@@ -132,7 +146,6 @@ const ABKAnalytics = () => {
         });
       });
       
-      // Penunjang dihitung dari % Total Rawat Inap
       const penunjang = {
         lab: totalRawatInap * (inputs.pctLab / 100),
         radiologi: totalRawatInap * (inputs.pctRadiologi / 100),
@@ -142,16 +155,25 @@ const ABKAnalytics = () => {
       penunjang.total = Object.values(penunjang).reduce((a, b) => a + b, 0);
       
       const totalPendapatan = totalRawatInap + penunjang.total;
+      
+      // LOGIKA PERSENTASE KENAIKAN/PENURUNAN
+      let actualGrowthPercent = 0;
+      if (year > 0 && previousTotalRevenue > 0) {
+        actualGrowthPercent = ((totalPendapatan - previousTotalRevenue) / previousTotalRevenue) * 100;
+      }
+      previousTotalRevenue = totalPendapatan;
+
       const totalTT = inputs.ttVIP + inputs.ttKelas1 + inputs.ttKelas2 + inputs.ttKelas3;
       const avgBOR = (totalHariRawat / (totalTT * 365)) * 100 * growthFactor;
       
       results.push({
-        tahunLabel: year === 0 ? 'Tahun Dasar' : `Tahun ${year}`,
-        tahun: year,
+        tahunLabel: year === 0 ? `${currentYear} (Dasar)` : `${currentYear}`,
+        tahunAngka: currentYear,
         classDetails,
         rawatInap: totalRawatInap,
         penunjang,
         total: totalPendapatan,
+        growthReal: actualGrowthPercent,
         indikator: {
           bor: avgBOR,
           alos: totalHariRawat / totalPasien,
@@ -164,23 +186,22 @@ const ABKAnalytics = () => {
     return results;
   }, [inputs]);
 
-  // --- EKSPOR DATA (DIKEMBALIKAN KE VERSI LENGKAP) ---
+  // --- EKSPOR DATA ---
   const handleExport = (type) => {
     if (type === 'excel') {
       const wb = XLSX.utils.book_new();
       
-      // Sheet 1: Ringkasan
       const summaryData = calculations.map(c => ({
         Tahun: c.tahunLabel,
         'Pendapatan Rawat Inap': c.rawatInap,
         'Pendapatan Penunjang': c.penunjang.total,
         'TOTAL PENDAPATAN': c.total,
+        'Pertumbuhan (%)': c.growthReal.toFixed(2) + '%',
         'BOR (%)': c.indikator.bor,
         'ALOS (hari)': c.indikator.alos
       }));
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryData), "Ringkasan");
 
-      // Sheet 2: Detail
       let detailRows = [];
       calculations.forEach(c => {
         detailRows.push({ Kelas: `--- ${c.tahunLabel} ---` });
@@ -198,13 +219,11 @@ const ABKAnalytics = () => {
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(detailRows), "Detail Per Kelas");
       
       XLSX.writeFile(wb, "ABK_Proyeksi_Keuangan.xlsx");
-    
     } else {
-      // PDF Export
       const doc = new jsPDF();
       doc.setFontSize(16);
       doc.text("Laporan Proyeksi Keuangan RS - ABK Financial", 14, 20);
-      doc.setFontSize(10); // Set font size kembali normal
+      doc.setFontSize(10);
       doc.text(`Dibuat pada: ${new Date().toLocaleDateString('id-ID')}`, 14, 26);
       
       const summaryBody = calculations.map(c => [
@@ -212,16 +231,16 @@ const ABKAnalytics = () => {
         formatRupiah(c.rawatInap),
         formatRupiah(c.penunjang.total),
         formatRupiah(c.total),
+        (c.growthReal >= 0 ? '+' : '') + c.growthReal.toFixed(2) + '%',
         formatNum(c.indikator.bor) + '%'
       ]);
 
-      // PERUBAHAN DI SINI: Gunakan autoTable(doc, options)
       autoTable(doc, {
         startY: 35,
-        head: [['Tahun', 'Rawat Inap', 'Penunjang', 'Total', 'BOR']],
+        head: [['Tahun', 'Rawat Inap', 'Penunjang', 'Total', 'Growth', 'BOR']],
         body: summaryBody,
         theme: 'grid',
-        headStyles: { fillColor: [15, 23, 42] } // Slate-900 color
+        headStyles: { fillColor: [15, 23, 42] }
       });
 
       doc.text("Indikator Kinerja Medis", 14, doc.lastAutoTable.finalY + 15);
@@ -234,7 +253,6 @@ const ABKAnalytics = () => {
         formatRupiah(c.indikator.revenuePerBed)
       ]);
 
-      // PERUBAHAN DI SINI JUGA
       autoTable(doc, {
         startY: doc.lastAutoTable.finalY + 20,
         head: [['Tahun', 'ALOS', 'BTO', 'TOI', 'Rev/Bed']],
@@ -268,7 +286,6 @@ const ABKAnalytics = () => {
             </div>
           </div>
 
-          {/* Navigasi Desktop (Tengah) */}
           <div className="hidden md:flex bg-slate-100 p-1 rounded-lg">
             {navItems.map((item) => (
               <button
@@ -285,7 +302,6 @@ const ABKAnalytics = () => {
             ))}
           </div>
 
-          {/* Tombol Ekspor (Kanan) */}
           <div className="hidden md:flex gap-2">
              <button onClick={() => handleExport('excel')} className="flex items-center gap-2 text-xs font-bold text-slate-600 hover:text-slate-900 px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors border border-transparent">
                 <FileSpreadsheet size={16} /> Excel
@@ -299,7 +315,6 @@ const ABKAnalytics = () => {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
         
-        {/* Tombol Kembali (Mobile & Desktop saat bukan di Dashboard) */}
         {activeTab !== 'dashboard' && (
           <button 
             onClick={() => setActiveTab('dashboard')}
@@ -309,14 +324,13 @@ const ABKAnalytics = () => {
           </button>
         )}
         
-        {/* 2. KONTEN HALAMAN */}
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
           
           {/* TAMPILAN DASHBOARD */}
           {activeTab === 'dashboard' && (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
               
-              {/* KIRI: PANEL INPUT (ACCORDION) */}
+              {/* KIRI: PANEL INPUT */}
               <div className="lg:col-span-4 space-y-6">
                 <div className="flex items-center justify-between mb-2">
                   <h2 className="font-display font-bold text-lg text-slate-800">Konfigurasi</h2>
@@ -324,22 +338,20 @@ const ABKAnalytics = () => {
                 </div>
 
                 {[
-                  { id: 'beds', title: 'Kapasitas TT', icon: Bed, fields: [
+                  { id: 'mix', title: 'Waktu & Pertumbuhan', icon: Calendar, type: 'custom' },
+                  
+                  { id: 'beds', title: 'Kapasitas TT', icon: Bed, type: 'fields', fields: [
                     {l:'TT VIP', k:'ttVIP'}, {l:'TT Kelas 1', k:'ttKelas1'},
                     {l:'TT Kelas 2', k:'ttKelas2'}, {l:'TT Kelas 3', k:'ttKelas3'}
                   ]},
-                  { id: 'bor', title: 'Target BOR', icon: Activity, fields: [
+                  { id: 'bor', title: 'Target BOR', icon: Activity, type: 'fields', fields: [
                     {l:'VIP %', k:'borVIP', s:'%'}, {l:'Kelas 1 %', k:'borKelas1', s:'%'},
                     {l:'Kelas 2 %', k:'borKelas2', s:'%'}, {l:'Kelas 3 %', k:'borKelas3', s:'%'}
                   ]},
-                  { id: 'finance', title: 'Tarif & BPJS', icon: Wallet, fields: [
+                  { id: 'finance', title: 'Tarif & BPJS', icon: Wallet, type: 'fields', fields: [
                     {l:'Tarif VIP', k:'tarifVIP'}, {l:'Tarif K1', k:'tarifKelas1'},
                     {l:'INA-CBG', k:'tarifBPJS'}, {l:'Mix BPJS', k:'pctBPJS', s:'%'}
                   ]},
-                  { id: 'mix', title: 'Penunjang & Growth', icon: PieChart, fields: [
-                    {l:'Lab %', k:'pctLab', s:'%'}, {l:'Rad %', k:'pctRadiologi', s:'%'},
-                    {l:'Farmasi %', k:'pctFarmasi', s:'%'}, {l:'Growth', k:'growthRate', s:'%'}
-                  ]}
                 ].map((group) => (
                   <Card key={group.id} className="transition-all duration-300">
                     <button 
@@ -356,17 +368,63 @@ const ABKAnalytics = () => {
                     </button>
                     
                     {expandedSection === group.id && (
-                      <div className="p-4 pt-0 grid grid-cols-2 gap-x-4 gap-y-6 bg-white border-t border-slate-50/50 mt-2">
-                        {group.fields.map((f) => (
-                          <InputField 
-                            key={f.k} 
-                            label={f.l} 
-                            field={f.k} 
-                            value={inputs[f.k]} 
-                            onChange={handleInputChange} 
-                            suffix={f.s} 
-                          />
-                        ))}
+                      <div className="p-4 pt-0 bg-white border-t border-slate-50/50 mt-2">
+                        {group.type === 'fields' ? (
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-6">
+                            {group.fields.map((f) => (
+                              <InputField 
+                                key={f.k} 
+                                label={f.l} 
+                                field={f.k} 
+                                value={inputs[f.k]} 
+                                onChange={handleInputChange} 
+                                suffix={f.s} 
+                              />
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="space-y-6">
+                            {/* KONTROL TAHUN & DURASI */}
+                            <div>
+                              <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                                Tahun Awal (Dasar)
+                              </label>
+                              <div className="flex items-center gap-4 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                                <button onClick={() => adjustYear(-1)} className="p-2 bg-white rounded-md shadow-sm hover:bg-slate-100 text-slate-600">
+                                  <Minus size={16} />
+                                </button>
+                                <span className="flex-1 text-center font-bold text-lg text-slate-800 font-display">
+                                  {inputs.baseYear}
+                                </span>
+                                <button onClick={() => adjustYear(1)} className="p-2 bg-white rounded-md shadow-sm hover:bg-slate-100 text-blue-600">
+                                  <Plus size={16} />
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-6">
+                               <InputField 
+                                  label="Durasi Proyeksi (Thn)" 
+                                  field="tahunProyeksi" 
+                                  value={inputs.tahunProyeksi} 
+                                  onChange={handleInputChange} 
+                                  min={1} 
+                                  suffix="thn"
+                               />
+                               <InputField 
+                                  label="Growth Rate" 
+                                  field="growthRate" 
+                                  value={inputs.growthRate} 
+                                  onChange={handleInputChange} 
+                                  suffix="%" 
+                                  step={0.5}
+                               />
+                               <InputField label="Lab %" field="pctLab" value={inputs.pctLab} onChange={handleInputChange} suffix="%"/>
+                               <InputField label="Rad %" field="pctRadiologi" value={inputs.pctRadiologi} onChange={handleInputChange} suffix="%"/>
+                               <InputField label="Farmasi %" field="pctFarmasi" value={inputs.pctFarmasi} onChange={handleInputChange} suffix="%"/>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </Card>
@@ -376,7 +434,7 @@ const ABKAnalytics = () => {
               {/* KANAN: HASIL UTAMA */}
               <div className="lg:col-span-8 space-y-6">
                 
-                {/* Kartu Hero (Gelap) */}
+                {/* Kartu Hero */}
                 <div className="bg-slate-900 rounded-3xl p-6 sm:p-10 text-white shadow-2xl shadow-slate-900/30 relative overflow-hidden group">
                   <div className="absolute top-0 right-0 p-32 bg-blue-500 rounded-full blur-[100px] opacity-20 group-hover:opacity-30 transition-opacity duration-700"></div>
                   <div className="relative z-10">
@@ -388,7 +446,7 @@ const ABKAnalytics = () => {
                         </h2>
                       </div>
                       <div className="bg-white/10 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 text-xs font-medium">
-                        Tahun Dasar
+                        Tahun {calculations[0].tahunLabel}
                       </div>
                     </div>
                     
@@ -417,27 +475,40 @@ const ABKAnalytics = () => {
 
                 {/* Kartu Pertumbuhan Tahunan */}
                 <h3 className="font-display font-bold text-slate-800 text-lg pt-4">Tren Pertumbuhan</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {calculations.slice(1).map((calc, idx) => (
-                    <StatCard 
-                      key={idx}
-                      title={calc.tahunLabel}
-                      value={formatRupiah(calc.total)}
-                      subtext={`Naik +${inputs.growthRate}% dari tahun lalu`}
-                      trend="Positif"
-                      active={false}
-                    />
-                  ))}
-                  <div 
-                    onClick={() => setActiveTab('details')}
-                    className="p-5 rounded-2xl border border-dashed border-slate-300 flex flex-col items-center justify-center text-center bg-slate-50/50 hover:bg-slate-100 transition-colors cursor-pointer group h-full min-h-[140px]"
-                  >
-                    <div className="bg-white p-3 rounded-full shadow-sm mb-3 group-hover:scale-110 transition-transform">
-                       <ArrowUpRight size={20} className="text-blue-600" />
+                
+                {calculations.length > 1 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {calculations.slice(1).map((calc, idx) => {
+                      const isPositive = calc.growthReal >= 0;
+                      return (
+                        <StatCard 
+                          key={idx}
+                          title={`TAHUN ${calc.tahunAngka}`}
+                          value={formatRupiah(calc.total)}
+                          subtext="vs Tahun Lalu"
+                          // LOGIKA LABEL & WARNA
+                          trendLabel={isPositive ? "Naik" : "Turun"}
+                          trendValue={`${formatNum(Math.abs(calc.growthReal))}%`}
+                          isPositive={isPositive}
+                          onClick={() => {}} 
+                        />
+                      );
+                    })}
+                    <div 
+                      onClick={() => setActiveTab('details')}
+                      className="p-5 rounded-2xl border border-dashed border-slate-300 flex flex-col items-center justify-center text-center bg-slate-50/50 hover:bg-slate-100 transition-colors cursor-pointer group h-full min-h-[140px]"
+                    >
+                      <div className="bg-white p-3 rounded-full shadow-sm mb-3 group-hover:scale-110 transition-transform">
+                         <ArrowUpRight size={20} className="text-blue-600" />
+                      </div>
+                      <span className="text-sm font-semibold text-slate-600">Lihat Detail Lengkap</span>
                     </div>
-                    <span className="text-sm font-semibold text-slate-600">Lihat Detail Lengkap</span>
                   </div>
-                </div>
+                ) : (
+                  <div className="p-8 bg-slate-50 rounded-xl border border-slate-200 text-center text-slate-500">
+                    Tambahkan durasi proyeksi (lebih dari 1 tahun) untuk melihat tren pertumbuhan.
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -450,7 +521,6 @@ const ABKAnalytics = () => {
                   <h3 className="font-display font-bold text-xl text-slate-900">Rincian Keuangan</h3>
                   <p className="text-sm text-slate-500">Proyeksi detail tahun ke tahun</p>
                 </div>
-                {/* Tombol Export Mobile (Hanya muncul di Details) */}
                 <div className="flex md:hidden gap-2 w-full sm:w-auto">
                     <button onClick={() => handleExport('excel')} className="flex-1 flex justify-center items-center gap-2 text-xs font-medium bg-slate-100 py-2 rounded-lg">
                         <FileSpreadsheet size={14} /> Excel
@@ -466,21 +536,26 @@ const ABKAnalytics = () => {
                     <tr>
                       <th className="px-6 py-4 text-left">Periode</th>
                       <th className="px-6 py-4 text-right text-slate-700">Rawat Inap</th>
-                      <th className="px-6 py-4 text-right">Laboratorium</th>
-                      <th className="px-6 py-4 text-right">Farmasi</th>
+                      <th className="px-6 py-4 text-right">Penunjang</th>
+                      <th className="px-6 py-4 text-right bg-slate-100 text-slate-600">Growth %</th>
                       <th className="px-6 py-4 text-right text-slate-900 bg-slate-50/50">Total Revenue</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {calculations.map((row, idx) => (
-                      <tr key={idx} className="hover:bg-blue-50/30 transition-colors group">
-                        <td className="px-6 py-4 font-semibold text-slate-900">{row.tahunLabel}</td>
-                        <td className="px-6 py-4 text-right text-slate-600 font-medium">{formatRupiah(row.rawatInap)}</td>
-                        <td className="px-6 py-4 text-right text-slate-500">{formatRupiah(row.penunjang.lab)}</td>
-                        <td className="px-6 py-4 text-right text-slate-500">{formatRupiah(row.penunjang.farmasi)}</td>
-                        <td className="px-6 py-4 text-right font-bold text-slate-900 bg-slate-50/30 group-hover:bg-blue-50/50">{formatRupiah(row.total)}</td>
-                      </tr>
-                    ))}
+                    {calculations.map((row, idx) => {
+                       const isPositive = row.growthReal >= 0;
+                       return (
+                        <tr key={idx} className="hover:bg-blue-50/30 transition-colors group">
+                          <td className="px-6 py-4 font-semibold text-slate-900">{row.tahunLabel}</td>
+                          <td className="px-6 py-4 text-right text-slate-600 font-medium">{formatRupiah(row.rawatInap)}</td>
+                          <td className="px-6 py-4 text-right text-slate-500">{formatRupiah(row.penunjang.total)}</td>
+                          <td className={`px-6 py-4 text-right font-bold ${isPositive ? 'text-emerald-600 bg-emerald-50/30' : 'text-rose-600 bg-rose-50/30'}`}>
+                            {idx === 0 ? '-' : `${isPositive ? '+' : ''}${formatNum(row.growthReal)}%`}
+                          </td>
+                          <td className="px-6 py-4 text-right font-bold text-slate-900 bg-slate-50/30 group-hover:bg-blue-50/50">{formatRupiah(row.total)}</td>
+                        </tr>
+                       );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -517,7 +592,7 @@ const ABKAnalytics = () => {
         </div>
       </main>
 
-      {/* 3. MOBILE BOTTOM NAVIGATION (INSTAGRAM STYLE) */}
+      {/* 3. MOBILE BOTTOM NAVIGATION */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-6 py-3 pb-6 z-40 flex justify-between items-center shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
         {navItems.map((item) => (
           <button
