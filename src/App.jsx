@@ -2,8 +2,7 @@ import HospitalRevenueProjection from './HospitalRevenueProjection'
 
 function App() {
   return (
-    // Container agar tampilan penuh
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-emerald-50">
       <HospitalRevenueProjection />
     </div>
   )
